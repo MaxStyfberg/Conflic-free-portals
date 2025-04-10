@@ -2,9 +2,9 @@
 in vec3 Color;
 out vec4 out_Color;
 in vec2 TexCoord;
-uniform sampler2D texUnit;
+uniform sampler2D tex1;
 
 void main(void)
 {
-	out_Color = vec4(Color,1.0)*texture(texUnit, TexCoord);
+	out_Color = texture(tex1, TexCoord);
 }

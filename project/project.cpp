@@ -14,6 +14,8 @@
 #define MAX_VERTICES 1000
 #define MAX_INDICES 3000
 #define MAX_ROOMS 10
+#define modelno 4
+
 
 typedef struct {
     vec3 vertices[MAX_VERTICES];
@@ -37,7 +39,9 @@ vec3 vertex[4];
 Room rooms[MAX_ROOMS];
 int roomCount = 0;
 GLuint program;
+Model *roommodels[modelno];
 Model *m, *m2, *tm, *sphere;
+GLuint tex1, tex2;
 // Reference to shader program
 float rotateX = 30;
 float rotateY = 8;
@@ -74,12 +78,7 @@ void LoadRoomsFromFile(const char* filename)
     {
         if (strncmp(line, "ROOM", 4) == 0)
         {
-            if (currentRoom.vertexCount > 0 && roomCount < MAX_ROOMS)
-            {   
-                printf("test");
-                rooms[roomCount++] = currentRoom;
-                memset(&currentRoom, 0, sizeof(Room));
-            }
+            roomCount++;
         }
         else if (strncmp(line, "VERTICES", 8) == 0){
             i = 0;
@@ -125,6 +124,7 @@ void LoadRoomsFromFile(const char* filename)
             }
         }  
     }
+    printf("Model created for room %d\n", roomCount);
 }
 
 void moveCamera() {
@@ -172,7 +172,7 @@ void init(void)
 	// GL inits
 	glClearColor(0.4,0.6,0.9,0);
 	glEnable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
+	glEnable(GL_CULL_FACE);
 	printError("GL inits");
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -183,11 +183,12 @@ void init(void)
 	glUseProgram(program);
 	printError("init shader");
 	
-	glUniformMatrix4fv(glGetUniformLocation(program, "projMatrix"), 1, GL_TRUE, projectionMatrix.m);
-
-    LoadRoomsFromFile("rooms.txt");
+	glUniformMatrix4fv(glGetUniformLocation(program, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
     
-    for (int i = 0; i < roomCount; i++)
+    LoadTGATextureSimple("grass.tga", &tex1);
+    LoadRoomsFromFile("rooms.txt");
+    glUniform1i(glGetUniformLocation(program, "tex1"), 0); // Set texture unit 0
+    /*for (int i = 0; i < roomCount; i++)
     {
         for (int j = 0; j < rooms[i].vertexCount; j++)
             rooms[i].colors[j] = SetVector(0.6, 0.6, 0.9);
@@ -202,11 +203,25 @@ void init(void)
         rooms[i].indexCount * sizeof(GLuint)
 
         );
-    }
+    }*/
+    /*for (int j = 0; j < rooms[0].vertexCount; j++)
+            rooms[0].colors[j] = SetVector(0.6, 0.6, 0.9);
+    
+    rooms[1].model = LoadDataToModel(
+    rooms[1].vertices,
+    rooms[1].normals,
+    rooms[1].texCoords,
+    rooms[1].colors,
+    rooms[1].indices,
+    rooms[1].vertexCount * sizeof(vec3),
+    rooms[1].indexCount * sizeof(GLuint));*/
    
-
-	
+    for(int i=1; i<=roomCount-2; i++){
+        roommodels[i] = LoadDataToModel(rooms[i].vertices, rooms[i].normals, rooms[i].texCoords, rooms[i].colors, rooms[i].indices, sizeof(rooms[i].vertices), sizeof(rooms[i].indices));
+   
+    }
 	printError("init terrain");
+
 }
 
 void display(void)
@@ -227,17 +242,20 @@ void display(void)
 	
 	vec3 cam = vec3(0, 5, 8);
 	vec3 lookAtPoint = vec3(2, 0, 2);
-	worldToView = lookAt(
-    0.0f, 5.0f, 10.0f,    // camera position (behind + above)
-    0.0f, 1.0f, 0.0f,     // looking toward the room
-    0.0f, 1.0f, 0.0f      // up
-);
+	worldToView = lookAt(cameraPos.x, cameraPos.y, cameraPos.z,
+                         cameraPos.x + cameraFront.x, cameraPos.y + cameraFront.y, cameraPos.z + cameraFront.z,
+                         cameraUp.x, cameraUp.y, cameraUp.z);
+     glUniformMatrix4fv(glGetUniformLocation(program, "view"), 1, 
+     GL_TRUE, worldToView.m);
 	modelToWorld = IdentityMatrix();
 	total = worldToView * modelToWorld;
-    for (int i = 0; i < roomCount; i++){
-        trans = T(0, 0, 5); // place them side by side
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex1);
+    for (int i = 1; i <=1; i++)
+    {
+        trans = T(i*25.0f, 0, 0); // Move rooms side by side
         glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
-        DrawModel(rooms[i].model, program, "in_Position", "in_Normal", "inTexCoord");
+        DrawModel(roommodels[i], program, "in_Position", "in_Normal", "inTexCoord");
     }
 	printError("display 2");
 	
