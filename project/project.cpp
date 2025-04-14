@@ -54,7 +54,7 @@ vec3 cameraUp = {0.0f, 1.0f, 0.0f}; // Up direction
 
 float yaw = -90.0f; // Left/right rotation
 float pitch = 0.0f; // Up/down rotation
-float cameraSpeed = 0.2f;
+float cameraSpeed = 3.0f;
 
 float lastX = 300, lastY = 300;
 bool firstMouse = true;
@@ -216,7 +216,7 @@ void init(void)
     rooms[1].vertexCount * sizeof(vec3),
     rooms[1].indexCount * sizeof(GLuint));*/
    
-    for(int i=1; i<=roomCount-2; i++){
+    for(int i=1; i<=roomCount; i++){
         roommodels[i] = LoadDataToModel(rooms[i].vertices, rooms[i].normals, rooms[i].texCoords, rooms[i].colors, rooms[i].indices, sizeof(rooms[i].vertices), sizeof(rooms[i].indices));
    
     }
@@ -251,9 +251,9 @@ void display(void)
 	total = worldToView * modelToWorld;
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex1);
-    for (int i = 1; i <=1; i++)
+    for (int i = 1; i <=3; i++)
     {
-        trans = T(i*25.0f, 0, 0); // Move rooms side by side
+        trans = T((i-1)*70.0f, 0, 0); // Move rooms side by side
         glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
         DrawModel(roommodels[i], program, "in_Position", "in_Normal", "inTexCoord");
     }
