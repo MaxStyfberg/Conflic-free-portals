@@ -23,10 +23,14 @@ typedef struct {
     vec2 texCoords[MAX_VERTICES];
     vec3 colors[MAX_VERTICES];
     GLuint indices[MAX_INDICES];
-    int vertexCount;
-    int indexCount;
-    Model* model;
 } Room;
+typedef struct {
+    vec3 vertices[MAX_VERTICES];
+    vec3 normals[MAX_VERTICES];
+    vec2 texCoords[MAX_VERTICES];
+    vec3 colors[MAX_VERTICES];
+    GLuint indices[MAX_INDICES];
+} Portal;
 
 mat4 projectionMatrix;
 
@@ -37,9 +41,12 @@ mat4 projectionMatrix;
 // vertex array object
 vec3 vertex[4];
 Room rooms[MAX_ROOMS];
+Portal portals[MAX_ROOMS];
+int portalCount = 0;
 int roomCount = 0;
 GLuint program;
 Model *roommodels[modelno];
+Model *portalmodels[modelno];
 Model *m, *m2, *tm, *sphere;
 GLuint tex1, tex2;
 // Reference to shader program
@@ -124,9 +131,75 @@ void LoadRoomsFromFile(const char* filename)
             }
         }  
     }
+    fclose(file);
     printf("Model created for room %d\n", roomCount);
 }
+void LoadPortalsFromFile(const char* filename)
+{
+    FILE* file = fopen(filename, "r");
+    if (!file)
+    {
+        printf("Failed to open file: %s\n", filename);
+        return;
+    }
 
+    char line[256];
+    Room currentPortal;
+    memset(&currentPortal, 0, sizeof(Portal));
+    int state = 0;
+    int i = 0;
+    while (fgets(line, sizeof(line), file))
+    {
+        if (strncmp(line, "PORTAL", 4) == 0)
+        {
+            portalCount++;
+        }
+        else if (strncmp(line, "VERTICES", 8) == 0){
+            i = 0;
+            state = 1;
+        }
+        else if (strncmp(line, "NORMALS", 7) == 0){
+            i = 0;
+            state = 2;
+        }  
+        else if (strncmp(line, "TEXCOORDS", 9) == 0){
+            i = 0;
+            state = 3;
+        }
+        else if (strncmp(line, "INDICES", 7) == 0){
+            i = 0;
+            state = 4;
+        }
+        else
+        {
+            float x, y, z;
+            if (state == 1 && sscanf(line, "%f %f %f", &x, &y, &z) == 3){
+                portals[portalCount].vertices[i] = vec3(x,y,z);
+                i++;
+            }
+            else if (state == 2 && sscanf(line, "%f %f %f", &x, &y, &z) == 3){
+                portals[portalCount].normals[i] = vec3(x, y, z);
+                i++;
+            }
+            else if (state == 3 && sscanf(line, "%f %f", &x, &y) == 2){
+                portals[portalCount].texCoords[i] = vec2(x, y);
+                i++;  
+            }
+            else if (state == 4) {
+                char* token = strtok(line, " \t\n");
+                while (token != NULL){ 
+                    int index;
+                    if (sscanf(token, "%d", &index) == 1)
+                    {
+                        portals[portalCount].indices[i++] = index;
+                    }
+                token = strtok(NULL, " \t\n");
+                }
+            }
+        }  
+    }
+    fclose(file);
+}
 void moveCamera() {
     vec3 right = normalize(cross(cameraFront, cameraUp));
     float rotationSpeed = 2.0f;
@@ -175,6 +248,7 @@ void init(void)
 	glEnable(GL_CULL_FACE);
 	printError("GL inits");
     glEnable(GL_BLEND);
+    glEnable(GL_STENCIL_TEST);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	projectionMatrix = frustum(-0.1, 0.1, -0.1, 0.1, 0.2, 5000.0);
 
@@ -187,35 +261,14 @@ void init(void)
     
     LoadTGATextureSimple("grass.tga", &tex1);
     LoadRoomsFromFile("rooms.txt");
+    LoadPortalsFromFile("portals.txt");
     glUniform1i(glGetUniformLocation(program, "tex1"), 0); // Set texture unit 0
-    /*for (int i = 0; i < roomCount; i++)
-    {
-        for (int j = 0; j < rooms[i].vertexCount; j++)
-            rooms[i].colors[j] = SetVector(0.6, 0.6, 0.9);
     
-        rooms[i].model = LoadDataToModel(
-        rooms[i].vertices,
-        rooms[i].normals,
-        rooms[i].texCoords,
-        rooms[i].colors,
-        rooms[i].indices,
-        rooms[i].vertexCount * sizeof(vec3),
-        rooms[i].indexCount * sizeof(GLuint)
-
-        );
-    }*/
-    /*for (int j = 0; j < rooms[0].vertexCount; j++)
-            rooms[0].colors[j] = SetVector(0.6, 0.6, 0.9);
     
-    rooms[1].model = LoadDataToModel(
-    rooms[1].vertices,
-    rooms[1].normals,
-    rooms[1].texCoords,
-    rooms[1].colors,
-    rooms[1].indices,
-    rooms[1].vertexCount * sizeof(vec3),
-    rooms[1].indexCount * sizeof(GLuint));*/
+   for(int i=1; i<=portalCount; i++){
+        portalmodels[i] = LoadDataToModel(portals[i].vertices, portals[i].normals, portals[i].texCoords, portals[i].colors, portals[i].indices, sizeof(portals[i].vertices), sizeof(portals[i].indices));
    
+    }
     for(int i=1; i<=roomCount; i++){
         roommodels[i] = LoadDataToModel(rooms[i].vertices, rooms[i].normals, rooms[i].texCoords, rooms[i].colors, rooms[i].indices, sizeof(rooms[i].vertices), sizeof(rooms[i].indices));
    
@@ -230,8 +283,8 @@ void display(void)
    
     // clear the screen
     moveCamera();
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	glStencilMask(0xFF);
 	mat4 total, modelToWorld, worldToView, trans;
 	
 	printError("pre display");
@@ -251,11 +304,28 @@ void display(void)
 	total = worldToView * modelToWorld;
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex1);
-    for (int i = 1; i <=3; i++)
+  
+
+  
+
+    for (int i = 1; i <=roomCount; i++)
     {
         trans = T((i-1)*70.0f, 0, 0); // Move rooms side by side
         glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
         DrawModel(roommodels[i], program, "in_Position", "in_Normal", "inTexCoord");
+        
+    }
+    for (int i = 1; i <=portalCount; i++)
+    {
+        if(i != 3){
+            trans = T((i-1)*70.0f, 0, 0); // Move rooms side by side
+        }
+        if(i == 4){
+            trans = T((2)*70.0f, 0, 0);
+        }
+        glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
+        DrawModel(portalmodels[i], program, "in_Position", "in_Normal", "inTexCoord");
+        
     }
 	printError("display 2");
 	
@@ -293,7 +363,7 @@ void mouse(int x, int y) {
 int main(int argc, char **argv)
 {
 	glutInit(&argc, argv);
-	glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH);
+	glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_STENCIL);
 	glutInitContextVersion(3, 2);
 	glutInitWindowSize (600, 600);
 	glutCreateWindow ("TSBK07 Lab 4");
