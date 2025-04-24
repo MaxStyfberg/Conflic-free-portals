@@ -53,7 +53,7 @@ Portal portals[MAX_ROOMS];
 //int portalCount = 0;
 int roomCount = 0;
 int currentCell = 1;
-GLuint program;
+GLuint program,portalShader;
 Model *roommodels[modelno];
 Model *portalmodels[modelno];
 Model *m, *m2, *tm, *sphere;
@@ -290,25 +290,29 @@ void init(void)
 	glClearColor(0.4,0.6,0.9,0);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
-	printError("GL inits");
-    glEnable(GL_BLEND);
-    glEnable(GL_STENCIL_TEST);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	projectionMatrix = frustum(-0.1, 0.1, -0.1, 0.1, 0.2, 5000.0);
 
 	// Load and compile shader
 	program = loadShaders("project.vert", "project.frag");
+    portalShader = loadShaders("portal.vert", "portal.frag");
 	glUseProgram(program);
 	printError("init shader");
 	
 	glUniformMatrix4fv(glGetUniformLocation(program, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
     
     LoadTGATextureSimple("grass.tga", &tex1);
+    glUniform1i(glGetUniformLocation(program, "tex1"), 0); // Set texture unit 0
+	glUseProgram(portalShader);
+	glUniformMatrix4fv(glGetUniformLocation(portalShader, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
+	glUniform1i(glGetUniformLocation(portalShader, "tex2"), 0); // Texture unit 0
+
     LoadRoomsFromFile("rooms.txt");
    // LoadPortalsFromFile("portals.txt");
-    glUniform1i(glGetUniformLocation(program, "tex1"), 0); // Set texture unit 0
-    LoadTGATextureSimple("redgrass.tga", &tex2);
-    glUniform1i(glGetUniformLocation(program, "tex2"), 1); // Set texture unit 0
+    
+
+
     
    /*for(int i=1; i<=portalCount; i++){
         portalmodels[i] = LoadDataToModel(portals[i].vertices, portals[i].normals, portals[i].texCoords, portals[i].colors, portals[i].indices, sizeof(portals[i].vertices), sizeof(portals[i].indices));
@@ -325,7 +329,7 @@ void init(void)
 		vec3(30, 10, -20),
 		vec3(40,-10, -20),
 		vec3(40, 10, -20),
-		T(0,0,0), // Translation part of portal transformation
+		T(70,0,-20), // Translation part of portal transformation
 		IdentityMatrix());
 
     addPortal(2,	// Add to this cell
@@ -337,15 +341,7 @@ void init(void)
 		T(70,0,0), // Translation part of portal transformation
 		IdentityMatrix());
 
-    addPortal(3,	// Add to this cell
-		2,			// Destination cell
-		vec3(0,-10, 0), // Four corners of portal. Must be a square.
-		vec3(0, 10, 0),
-		vec3(10,-10, -10),
-		vec3(10, 10, -10),
-		T(140,0,0), // Translation part of portal transformation
-		IdentityMatrix());
-
+    
     addPortal(2,	// Add to this cell
 		3,			// Destination cell
 		vec3(60,-10, -10), // Four corners of portal. Must be a square.
@@ -355,6 +351,15 @@ void init(void)
 		T(70,0,0), // Translation part of portal transformation
 		IdentityMatrix());
  
+    addPortal(3,	// Add to this cell
+		2,			// Destination cell
+		vec3(0,-10, 0), // Four corners of portal. Must be a square.
+		vec3(0, 10, 0),
+		vec3(10,-10, -10),
+		vec3(10, 10, -10),
+		T(140,0,0), // Translation part of portal transformation
+		IdentityMatrix());
+
     currentCell = 1;
 	printError("init terrain");
 
@@ -364,7 +369,7 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
 {
 	mat4 m,trans;
 	
-	if (count < 2)
+	if (count < 1)
 	for (int i = 0; i < rooms[currentCell].portalCount; i++)
 	{
 		if (rooms[currentCell].portals[i].dest != fromCell) // Do not go back!
@@ -388,19 +393,23 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 	
+	printf("currentCell %d\n", currentCell);
+   
 	
-    trans = T((currentCell-1)*70.0f, 0, 0); // Move rooms side by side
-    glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
-    DrawModel(roommodels[currentCell], program, "in_Position", "in_Normal", "inTexCoord");
+        trans = T(rooms[currentCell].portals[0].center.x, rooms[currentCell].portals[0].center.y, rooms[currentCell].portals[0].center.z); // Move rooms side by side
+        glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
+        DrawModel(roommodels[currentCell], program, "in_Position", "in_Normal", "inTexCoord");
+    
         
     
 	glEnable(GL_CULL_FACE);
 	glEnable(GL_BLEND);
 
-	glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
+    glUseProgram(portalShader);
+	glUniformMatrix4fv(glGetUniformLocation(portalShader, "modelviewMatrix"), 1, GL_TRUE, Mult(worldToView, modelToWorld).m);
 	for (int i = 0; i < rooms[currentCell].portalCount; i++)
 	{
-		DrawModel(rooms[currentCell].portals[i].model, program, "in_Position", "in_Normal", "inTexCoord");
+		DrawModel(rooms[currentCell].portals[i].model, portalShader, "in_Position", "in_Normal", "inTexCoord");
 	}
 
 }
@@ -428,7 +437,6 @@ void display(void)
      glUniformMatrix4fv(glGetUniformLocation(program, "view"), 1, 
      GL_TRUE, worldToView.m);
 	modelToWorld = IdentityMatrix();
-    int useTex2Loc = glGetUniformLocation(program, "useTex2");
 	total = worldToView * modelToWorld;
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex1);
@@ -513,3 +521,4 @@ int main(int argc, char **argv)
 	glutMainLoop();
 	exit(0);
 }
+
