@@ -116,7 +116,16 @@ void LoadRoomsFromFile(const char* filename)
         {
             float x, y, z;
             if (state == 1 && sscanf(line, "%f %f %f", &x, &y, &z) == 3){
+                if(roomCount==2){
+                    rooms[roomCount].vertices[i] = vec3(x,y,z) + vec3(30,0,-20);
+                }
+                else if(roomCount ==3){
+                    rooms[roomCount].vertices[i] = vec3(x,y,z) + vec3(80,0,-20);
+                }
+                else{
                 rooms[roomCount].vertices[i] = vec3(x,y,z);
+               
+                }
                 i++;
             }
             else if (state == 2 && sscanf(line, "%f %f %f", &x, &y, &z) == 3){
@@ -318,6 +327,8 @@ void init(void)
         portalmodels[i] = LoadDataToModel(portals[i].vertices, portals[i].normals, portals[i].texCoords, portals[i].colors, portals[i].indices, sizeof(portals[i].vertices), sizeof(portals[i].indices));
    
     }*/
+
+   
     
     for(int i=1; i<=roomCount; i++){
         roommodels[i] = LoadDataToModel(rooms[i].vertices, rooms[i].normals, rooms[i].texCoords, rooms[i].colors, rooms[i].indices, sizeof(rooms[i].vertices), sizeof(rooms[i].indices));
@@ -329,18 +340,8 @@ void init(void)
 		vec3(30, 10, -20),
 		vec3(40,-10, -20),
 		vec3(40, 10, -20),
-		T(70,0,-20), // Translation part of portal transformation
-		IdentityMatrix());
-
-    addPortal(2,	// Add to this cell
-		1,			// Destination cell
-		vec3(10,-10, 0), // Four corners of portal. Must be a square.
-		vec3(10, 10, 0),
-		vec3(0,-10, 0),
-		vec3(0, 10, 0),
 		T(70,0,0), // Translation part of portal transformation
 		IdentityMatrix());
-
     
     addPortal(2,	// Add to this cell
 		3,			// Destination cell
@@ -351,14 +352,6 @@ void init(void)
 		T(70,0,0), // Translation part of portal transformation
 		IdentityMatrix());
  
-    addPortal(3,	// Add to this cell
-		2,			// Destination cell
-		vec3(0,-10, 0), // Four corners of portal. Must be a square.
-		vec3(0, 10, 0),
-		vec3(10,-10, -10),
-		vec3(10, 10, -10),
-		T(140,0,0), // Translation part of portal transformation
-		IdentityMatrix());
 
     currentCell = 1;
 	printError("init terrain");
@@ -369,7 +362,7 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
 {
 	mat4 m,trans;
 	
-	if (count < 1)
+	if (count <= 2)
 	for (int i = 0; i < rooms[currentCell].portalCount; i++)
 	{
 		if (rooms[currentCell].portals[i].dest != fromCell) // Do not go back!
@@ -393,12 +386,12 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 	
-	printf("currentCell %d\n", currentCell);
+	
    
 	
-        trans = T(rooms[currentCell].portals[0].center.x, rooms[currentCell].portals[0].center.y, rooms[currentCell].portals[0].center.z); // Move rooms side by side
-        glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
-        DrawModel(roommodels[currentCell], program, "in_Position", "in_Normal", "inTexCoord");
+    trans = T(0,0,0);//rooms[currentCell].portals[0].center.x, rooms[currentCell].portals[0].center.y, rooms[currentCell].portals[0].center.z); // Move rooms side by side
+    glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
+    DrawModel(roommodels[currentCell], program, "in_Position", "in_Normal", "inTexCoord");
     
         
     
