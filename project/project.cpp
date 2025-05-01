@@ -35,6 +35,8 @@ typedef struct {
     vec2 texCoords[MAX_VERTICES];
     vec3 colors[MAX_VERTICES];
     GLuint indices[MAX_INDICES];
+    vec2 floorOutline[MAX_VERTICES];
+    int floorVertCount;
     int portalCount = 0;
     Portal *portals;
 } Room;
@@ -64,7 +66,7 @@ float rotateY = 8;
 float rotateZ = 0;
 float sphereX = 5.0f, sphereZ = 5.0f, sphereY = 0.0f;
 float velocityX = 0.02f, velocityZ = 0.01f; // Speed of movement
-vec3 cameraPos = {0.0f, 5.0f, 8.0f};  // Camera's position
+vec3 cameraPos = {10.0f, 0.0f, 5.0f};  // Camera's position
 vec3 cameraFront = {0.0f, 0.0f, -1.0f}; // Direction camera is facing
 vec3 cameraUp = {0.0f, 1.0f, 0.0f}; // Up direction
 
@@ -126,6 +128,9 @@ void LoadRoomsFromFile(const char* filename)
                 rooms[roomCount].vertices[i] = vec3(x,y,z);
                
                 }
+                if(y == -10){
+                    //rooms[roomCount].floorOutline[rooms[roomCount].floorVertCount++] = vec2(x,z);
+                }
                 i++;
             }
             else if (state == 2 && sscanf(line, "%f %f %f", &x, &y, &z) == 3){
@@ -150,9 +155,24 @@ void LoadRoomsFromFile(const char* filename)
         }  
     }
     fclose(file);
-    printf("Model created for room %d\n", roomCount);
+    printf("max(%.2f, %.2f,)\n", rooms[1].floorOutline[0].x, rooms[1].floorOutline[0].y);
+
+    printf("Model created for room %d\n", rooms[1].floorVertCount);
 }
-/*void LoadPortalsFromFile(const char* filename)
+
+bool isInsideRoom(Room* room, vec2 point) {
+    int i, j, c = 0;
+    for (i = 0, j = room->floorVertCount - 1; i < room->floorVertCount; j = i++) {
+        vec2 vi = room->floorOutline[i];
+        vec2 vj = room->floorOutline[j];
+        if (((vi.y > point.y) != (vj.y > point.y)) &&
+            (point.x < (vj.x - vi.x) * (point.y - vi.y) / (vj.y - vi.y) + vi.x))
+            c = !c;
+    }
+    return c;
+}
+/*void
+ LoadPortalsFromFile(const char* filename)
 {
     FILE* file = fopen(filename, "r");
     if (!file)
@@ -218,23 +238,45 @@ void LoadRoomsFromFile(const char* filename)
     }
     fclose(file);
 }*/
+bool intersectsPortal(Portal* p, vec3 camPos) {
+    vec3 portalCenter = p->center;
+    float dist = Norm(VectorSub(camPos, portalCenter));
+    return dist < 2.0f; // Radius threshold
+}
 void moveCamera() {
     vec3 right = normalize(cross(cameraFront, cameraUp));
     float rotationSpeed = 2.0f;
+    vec3 movement = {0.0f, 0.0f, 0.0f};
 
-    if (glutKeyIsDown('w')) // Move forward
-        cameraPos = VectorAdd(cameraPos, ScalarMult(cameraFront, cameraSpeed));
-    if (glutKeyIsDown('s')) // Move backward
-        cameraPos = VectorSub(cameraPos, ScalarMult(cameraFront, cameraSpeed));
-    if (glutKeyIsDown('a')) // Move left (strafe)
-        cameraPos = VectorSub(cameraPos, ScalarMult(right, cameraSpeed));
-    if (glutKeyIsDown('d')) // Move right (strafe)
-        cameraPos = VectorAdd(cameraPos, ScalarMult(right, cameraSpeed));
-    if (glutKeyIsDown('q')) // Move up
-        cameraPos = VectorAdd(cameraPos, ScalarMult(cameraUp, cameraSpeed));
-    if (glutKeyIsDown('e')) // Move down
-        cameraPos = VectorSub(cameraPos, ScalarMult(cameraUp, cameraSpeed));
+    // Accumulate movement input
+    if (glutKeyIsDown('w'))
+        movement = VectorAdd(movement, ScalarMult(cameraFront, cameraSpeed));
+    if (glutKeyIsDown('s'))
+        movement = VectorSub(movement, ScalarMult(cameraFront, cameraSpeed));
+    if (glutKeyIsDown('a'))
+        movement = VectorSub(movement, ScalarMult(right, cameraSpeed));
+    if (glutKeyIsDown('d'))
+        movement = VectorAdd(movement, ScalarMult(right, cameraSpeed));
+    if (glutKeyIsDown('q'))
+        movement = VectorAdd(movement, ScalarMult(cameraUp, cameraSpeed));
+    if (glutKeyIsDown('e'))
+        movement = VectorSub(movement, ScalarMult(cameraUp, cameraSpeed));
 
+    // Store old position before applying movement
+    vec3 oldPos = cameraPos;
+    cameraPos = VectorAdd(cameraPos, movement);
+
+    // Only keep the move if it's within the current room's 2D boundary
+    vec2 pos2D = { cameraPos.x, cameraPos.z };
+    printf("Model created for room %d\n", currentCell);
+    printf("Camera at (%f, %f)\n", pos2D.x, pos2D.y);
+    if (!isInsideRoom(&rooms[currentCell], pos2D)) {
+    printf("Blocked: outside room\n");
+        cameraPos = oldPos;
+    } else {
+        printf("Inside room\n");
+    }
+ 
     if (glutKeyIsDown(GLUT_KEY_LEFT))  // Rotate left
         yaw -= rotationSpeed;
     if (glutKeyIsDown(GLUT_KEY_RIGHT)) // Rotate right
@@ -256,6 +298,17 @@ void moveCamera() {
     front.y = sin(radians(pitch));
     front.z = sin(radians(yaw)) * cos(radians(pitch));
     cameraFront = normalize(front);
+    for (int i = 0; i < rooms[currentCell].portalCount; i++) {
+        Portal* p = &rooms[currentCell].portals[i];
+        if (intersectsPortal(p, cameraPos)) {
+        // Apply portal transform to camera position
+            vec3 relative = VectorSub(cameraPos, p->center);
+            vec3 newPos = p->trans * (p->rot * relative);
+            cameraPos = VectorAdd(rooms[p->dest].portals[0].center, newPos);
+            currentCell = p->dest;
+            break;
+        }
+    }
 }
 
 void addPortal(int cell, int toCell, vec3 a, vec3 b, vec3 c, vec3 d, mat4 trans, mat4 rot)
@@ -334,6 +387,29 @@ void init(void)
         roommodels[i] = LoadDataToModel(rooms[i].vertices, rooms[i].normals, rooms[i].texCoords, rooms[i].colors, rooms[i].indices, sizeof(rooms[i].vertices), sizeof(rooms[i].indices));
    
     }
+    rooms[1].floorVertCount = 6;
+    rooms[1].floorOutline[0] = vec2 (0,0);
+    rooms[1].floorOutline[1] = vec2 (0,20);
+    rooms[1].floorOutline[2] = vec2 (40,20);
+    rooms[1].floorOutline[3] = vec2 (40,-20);
+    rooms[1].floorOutline[4] = vec2 (-30,-20);
+    rooms[1].floorOutline[5] = vec2 (-30,0);
+    rooms[2].floorVertCount = 6;
+    rooms[2].floorOutline[0] = vec2 (30,-20);
+    rooms[2].floorOutline[1] = vec2 (90,-20);
+    rooms[2].floorOutline[2] = vec2 (90,-60);
+    rooms[2].floorOutline[3] = vec2 (20, -60);
+    rooms[2].floorOutline[4] = vec2 (20, -50);
+    rooms[2].floorOutline[5] = vec2 (30, -50);
+    rooms[3].floorVertCount = 7;
+    rooms[3].floorOutline[0] = vec2 (80,-20);
+    rooms[3].floorOutline[1] = vec2 (75,-20);
+    rooms[3].floorOutline[2] = vec2 (75, 10);
+    rooms[3].floorOutline[3] = vec2 (85, 10);
+    rooms[3].floorOutline[4] = vec2 (85, 30);
+    rooms[3].floorOutline[5] = vec2 (160, 30);
+    rooms[3].floorOutline[6] = vec2 (160,-30);
+
     addPortal(1,	// Add to this cell
 		2,			// Destination cell
 		vec3(30,-10, -20), // Four corners of portal. Must be a square.
@@ -357,6 +433,8 @@ void init(void)
 	printError("init terrain");
 
 }
+
+
 
 void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld, int count) // Draw cells recursively! Needed for the semitransparent portal!
 {
