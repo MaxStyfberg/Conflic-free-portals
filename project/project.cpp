@@ -239,9 +239,23 @@ bool isInsideRoom(Room* room, vec2 point) {
     fclose(file);
 }*/
 bool intersectsPortal(Portal* p, vec3 camPos) {
-    vec3 portalCenter = p->center;
-    float dist = Norm(VectorSub(camPos, portalCenter));
-    return dist < 2.0f; // Radius threshold
+    vec3 portalA = p->a;
+    vec3 portalD = p->d;
+    printf("Portal A x and z (%f, %f)\n", portalA.x, portalA.z);
+    printf("Portal D x and z (%f, %f)\n", portalD.x, portalD.z);
+    if(camPos.x > portalA.x && camPos.x < portalD.x){
+        if(camPos.z > portalD.z){
+            return true;
+        }
+        else{
+            return false; 
+         }
+    }
+    else {
+        return false;
+    }
+    /*float dist = Norm(VectorSub(camPos, portalCenter));
+    return dist < 2.0f*/; // Radius threshold
 }
 void moveCamera() {
     vec3 right = normalize(cross(cameraFront, cameraUp));
@@ -337,7 +351,7 @@ void addPortal(int cell, int toCell, vec3 a, vec3 b, vec3 c, vec3 d, mat4 trans,
 						0.0f, M_PI,
 						0.0f, 0.0f,
 						M_PI, 0.0f};
-	GLuint indicesp[] = {0,2,1, 2,0, 3};
+	GLuint indicesp[] = {0,2,1, 2, 0, 3};
 	rooms[cell].portals[portalCount].model = LoadDataToModel((vec3 *)verticesp, NULL, (vec2 *)texcoordp, NULL,
 			indicesp, 4, 6);
 
@@ -416,16 +430,34 @@ void init(void)
 		vec3(30, 10, -20),
 		vec3(40,-10, -20),
 		vec3(40, 10, -20),
-		T(70,0,0), // Translation part of portal transformation
+		T(0,0,-20), // Translation part of portal transformation
+		IdentityMatrix());
+
+    addPortal(2,	// Add to this cell
+		1,			// Destination cell
+		vec3(30,-10, -20), // Four corners of portal. Must be a square.
+		vec3(30, 10, -20),
+		vec3(40,-10, -20),
+		vec3(40, 10, -20),
+		T(0,0,0), // Translation part of portal transformation
 		IdentityMatrix());
     
     addPortal(2,	// Add to this cell
 		3,			// Destination cell
+		vec3(90,-10, -20), // Four corners of portal. Must be a square.
+		vec3(90, 10, -20),
+		vec3(80,-10, -10),
+		vec3(80, 10, -10),
+		T(0,0,0), // Translation part of portal transformation
+		IdentityMatrix());
+
+    addPortal(3,	// Add to this cell
+		2,			// Destination cell
 		vec3(60,-10, -10), // Four corners of portal. Must be a square.
 		vec3(60, 10, -10),
 		vec3(50,-10, 0),
 		vec3(50, 10, 0),
-		T(70,0,0), // Translation part of portal transformation
+		T(0,0,-20), // Translation part of portal transformation
 		IdentityMatrix());
  
 
