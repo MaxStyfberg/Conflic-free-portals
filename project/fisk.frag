@@ -17,6 +17,6 @@ void main(void)
 //	if (t.a < 0.01) discard;
 //	else
 	float shade = sqrt(sin(texCoord.s)*sin(texCoord.t));// * sin(texCoord.s)*sin(texCoord.t);
-    vec3 blue = vec3(0.0, 1.0, 0.0);
-	outColor = (blue,1.0);
-}a
+    vec3 blue = vec3(0.0, 0.0, 1.0);
+	outColor =  vec4(blue,1.0);
+}
