@@ -74,7 +74,7 @@ vec3 cameraUp = {0.0f, 1.0f, 0.0f}; // Up direction
 
 float yaw = -90.0f; // Left/right rotation
 float pitch = 0.0f; // Up/down rotation
-float cameraSpeed = 3.0f;
+float cameraSpeed = 1.0f;
 
 float lastX = 300, lastY = 300;
 bool firstMouse = true;
@@ -124,7 +124,7 @@ void LoadRoomsFromFile(const char* filename)
                     rooms[roomCount].vertices[i] = vec3(x,y,z) + vec3(30,0,-20);
                 }
                 else if(roomCount ==3){
-                    rooms[roomCount].vertices[i] = vec3(x,y,z) + vec3(80,0,-19);
+                    rooms[roomCount].vertices[i] = vec3(x,y,z) + vec3(80,0,-20);
                 }
                 else{
                 rooms[roomCount].vertices[i] = vec3(x,y,z);
@@ -173,77 +173,22 @@ bool isInsideRoom(Room* room, vec2 point) {
     }
     return c;
 }
-/*void
- LoadPortalsFromFile(const char* filename)
-{
-    FILE* file = fopen(filename, "r");
-    if (!file)
-    {
-        printf("Failed to open file: %s\n", filename);
-        return;
-    }
-
-    char line[256];
-    Room currentPortal;
-    memset(&currentPortal, 0, sizeof(Portal));
-    int state = 0;
-    int i = 0;
-    while (fgets(line, sizeof(line), file))
-    {
-        if (strncmp(line, "PORTAL", 4) == 0)
-        {
-            portalCount++;
-        }
-        else if (strncmp(line, "VERTICES", 8) == 0){
-            i = 0;
-            state = 1;
-        }
-        else if (strncmp(line, "NORMALS", 7) == 0){
-            i = 0;
-            state = 2;
-        }  
-        else if (strncmp(line, "TEXCOORDS", 9) == 0){
-            i = 0;
-            state = 3;
-        }
-        else if (strncmp(line, "INDICES", 7) == 0){
-            i = 0;
-            state = 4;
-        }
-        else
-        {
-            float x, y, z;
-            if (state == 1 && sscanf(line, "%f %f %f", &x, &y, &z) == 3){
-                portals[portalCount].vertices[i] = vec3(x,y,z);
-                i++;
-            }
-            else if (state == 2 && sscanf(line, "%f %f %f", &x, &y, &z) == 3){
-                portals[portalCount].normals[i] = vec3(x, y, z);
-                i++;
-            }
-            else if (state == 3 && sscanf(line, "%f %f", &x, &y) == 2){
-                portals[portalCount].texCoords[i] = vec2(x, y);
-                i++;  
-            }
-            else if (state == 4) {
-                char* token = strtok(line, " \t\n");
-                while (token != NULL){ 
-                    int index;
-                    if (sscanf(token, "%d", &index) == 1)
-                    {
-                        portals[portalCount].indices[i++] = index;
-                    }
-                token = strtok(NULL, " \t\n");
-                }
-            }
-        }  
-    }
-    fclose(file);
-}*/
 bool intersectsPortal(Portal* p, vec3 camPos) {
-    vec3 portalCenter = p->center;
-    float dist = Norm(VectorSub(camPos, portalCenter));
-    return dist < 2.0f; // Radius threshold
+    vec3 u = VectorSub(p->b, p->a); // vertical
+    vec3 v = VectorSub(p->c, p->a); // horizontal
+    vec3 n = normalize(cross(u, v)); // portal normal
+
+    float d = DotProduct(n, VectorSub(camPos, p->a));
+    if (fabs(d) > 1.0f) return false; // Allow small tolerance
+
+    // Project to local 2D portal space
+    vec3 ap = VectorSub(camPos, p->a);
+    float u_len = Norm(u);
+    float v_len = Norm(v);
+    float proj_u = DotProduct(ap, normalize(u)) / u_len;
+    float proj_v = DotProduct(ap, normalize(v)) / v_len;
+
+    return proj_u >= 0.0f && proj_u <= 1.0f && proj_v >= 0.0f && proj_v <= 1.0f;
 }
 
 void moveCamera() {
@@ -269,6 +214,10 @@ void moveCamera() {
     vec3 oldPos = cameraPos;
     cameraPos = VectorAdd(cameraPos, movement);
 
+// Lock Y position
+    cameraPos.y = 0.0f;
+    
+    //printf("location %f\n%f\n%f\n ", cameraPos.x,cameraPos.y,cameraPos.z);
     // Only keep the move if it's within the current room's 2D boundary
     vec2 pos2D = { cameraPos.x, cameraPos.z };
     if (!isInsideRoom(&rooms[currentCell], pos2D)) {;
@@ -299,12 +248,30 @@ void moveCamera() {
     for (int i = 0; i < rooms[currentCell].portalCount; i++) {
         Portal* p = &rooms[currentCell].portals[i];
         if (intersectsPortal(p, cameraPos)) {
+        if(currentCell != 3){
+            cameraPos = cameraPos- rooms[currentCell].portals[i].center;
+            cameraPos = rooms[currentCell].portals[i].rot * cameraPos;
+		    cameraPos = cameraPos + rooms[currentCell].portals[i].center;
+														// Then translate to portal destination
+		    cameraPos = rooms[currentCell].portals[i].move * cameraPos;
+		    movement = rooms[currentCell].portals[i].rot * movement;
+        }
+        else{
+
         // Apply portal transform to camera position
-            vec3 relative = VectorSub(cameraPos, p->center);
-            vec3 newPos = p->move * (p->rot * relative);
-            cameraPos = VectorAdd(rooms[p->dest].portals[0].center, newPos);
-            currentCell = p->dest;
-            break;
+            Portal* destPortal = &rooms[p->dest].portals[0]; // assumes it's always portal 0,change if needed
+
+            // Get relative position to entry portal
+            vec3 localOffset = VectorSub(cameraPos, p->a); // more consistent than using center
+
+            // Transform to destination portal space
+            vec3 offsetRotated = p->rot * localOffset;    // rotate from source to dest frame
+            vec3 offsetMoved = p->move * offsetRotated;   // apply movement
+
+            cameraPos = VectorAdd(destPortal->a, offsetMoved);
+            }
+        currentCell = p->dest;
+        break;
         }
     }
 }
@@ -384,15 +351,6 @@ void init(void)
     
 
     LoadRoomsFromFile("rooms.txt");
-   // LoadPortalsFromFile("portals.txt");
-    
-
-
-    
-   /*for(int i=1; i<=portalCount; i++){
-        portalmodels[i] = LoadDataToModel(portals[i].vertices, portals[i].normals, portals[i].texCoords, portals[i].colors, portals[i].indices, sizeof(portals[i].vertices), sizeof(portals[i].indices));
-   
-    }*/
 
    
     
@@ -434,7 +392,7 @@ void init(void)
 		vec3(40, 10, -20),
 		T(0,0,0), // Translation part of portal transformation
 		IdentityMatrix(),
-        T(0,0,-20));
+        T(0,0,-1.5));
 
    addPortal(2,	// Add to this cell
 		1,			// Destination cell
@@ -444,7 +402,7 @@ void init(void)
 		vec3(40, 10, -20),
 		T(0,0,0), // Translation part of portal transformation
 		Ry(M_PI),
-        T(0,0,20));
+        T(0,0, 1.5));
     
     addPortal(2,	// Add to this cell
 		3,			// Destination cell
@@ -454,7 +412,7 @@ void init(void)
 		vec3(80, 10, -20),
 		T(0, 0, 0), // Translation part of portal transformation
 		IdentityMatrix(),
-        T(0,0,20));
+        T(0,0,1.5));
 
     addPortal(3,	// Add to this cell
 		2,			// Destination cell
@@ -462,7 +420,7 @@ void init(void)
 		vec3(90, 10, -20),
 		vec3(80,-10, -20),
 		vec3(80, 10, -20),
-		T(0,0,0), // Translation part of portal transformation
+		T(50,0,-20), // Translation part of portal transformation
 		Ry(M_PI),
         T(50,0,0));
  
@@ -477,8 +435,11 @@ void init(void)
 void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld, int count) // Draw cells recursively! Needed for the semitransparent portal!
 {
 	mat4 m,trans;
+    bool visited[MAX_ROOMS] = { false };
 	
-	if (count < 1)
+    if(count <2){
+	    if (!visited[currentCell]){
+        visited[currentCell] = true;
 	for (int i = 0; i < rooms[currentCell].portalCount; i++)
 	{
 		if (rooms[currentCell].portals[i].dest != fromCell) // Do not go back!
@@ -493,11 +454,15 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
 			vec3 c1 = rooms[currentCell].portals[i].center; // Nuvarande portal
 			mat4 tf = T(c1.x, c1.y, c1.z); // Translation portal destination to current
 			m = tf * m;
+            mat4 newModelToWorld = Mult(modelToWorld, m);
             printf("dest %d\n ", rooms[currentCell].portals[i].dest );
             printf("location %f\n ", rooms[currentCell].portals[i].center.x );
-			DrawCell(rooms[currentCell].portals[i].dest, currentCell, worldToView, Mult(modelToWorld, m), count+1);
+            printf("count %d\n", count);
+			DrawCell(rooms[currentCell].portals[i].dest, currentCell, worldToView, newModelToWorld, count+1);
 		}
 	}
+}
+}
 		
 	glDisable(GL_CULL_FACE);
 	glEnable(GL_DEPTH_TEST);
@@ -559,36 +524,7 @@ void display(void)
 	total = worldToView * modelToWorld;
     DrawCell(currentCell, -1, worldToView, IdentityMatrix(), 0); // Draw cells recursively! Needed for the semitransparent portal!
   
-    /*for (int i = 1; i <=roomCount; i++)
-    {
-        trans = T((i-1)*70.0f, 0, 0); // Move rooms side by side
-        glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
-        DrawModel(roommodels[i], program, "in_Position", "in_Normal", "inTexCoord");
-        
-    }*/
-    /*for (int i = 1; i <=portalCount; i++)
-    {
-        if(i != 3){
-            trans = T((i-1)*70.0f, 0, 0); // Move rooms side by side
-        }
-        if(i == 4){
-            trans = T((2)*70.0f, 0, 0);
-        }
-        glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
-        DrawModel(portalmodels[i], program, "in_Position", "in_Normal", "inTexCoord");
-        
-    }*/
-    /*glUniform1i(useTex2Loc, 1);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, tex2);
-    glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, rooms[1].portals[0].trans.m);
-    DrawModel(rooms[1].portals[0].model, program, "in_Position", "in_Normal", "inTexCoord");
-    glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, rooms[2].portals[0].trans.m);
-    DrawModel(rooms[2].portals[0].model, program, "in_Position", "in_Normal", "inTexCoord");
-    glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, rooms[2].portals[1].trans.m);
-    DrawModel(rooms[2].portals[1].model, program, "in_Position", "in_Normal", "inTexCoord");
-	glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, rooms[3].portals[0].trans.m);
-    DrawModel(rooms[3].portals[0].model, program, "in_Position", "in_Normal", "inTexCoord");*/
+ 
 	printError("display 2");
 	
 	glutSwapBuffers();
