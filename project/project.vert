@@ -7,6 +7,7 @@ uniform mat4 total, view;
 uniform mat4 projectionMatrix;
 in vec2 inTexCoord;
 out vec2 TexCoord;
+out float worldPos;
 
 void main(void)
 {
@@ -18,5 +19,6 @@ void main(void)
  	shade = dot(normalize(transformedNormal),light);
 	TexCoord = inTexCoord;
 	Color = vec3(shade);
+    worldPos = in_Position.y;
 	gl_Position = projectionMatrix*view*total*vec4(in_Position, 1.0);
 }

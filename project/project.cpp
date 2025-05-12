@@ -3,6 +3,7 @@
 // uses framework Cocoa
 // uses framework OpenGL
 #define MAIN
+#include "lodepng.h"
 #include "MicroGlut.h"
 #include "GL_utilities.h"
 #include "VectorUtils4.h"
@@ -40,7 +41,9 @@ typedef struct {
     int floorVertCount;
     int portalCount = 0;
     Portal *portals;
-    GLuint tex;
+    GLuint walltex;
+    GLuint floortex;
+    GLuint rooftex;
 } Room;
 
 
@@ -61,7 +64,7 @@ GLuint program,portalShader;
 Model *roommodels[modelno];
 Model *portalmodels[modelno];
 Model *m, *m2, *tm, *sphere;
-GLuint grasstex,rocktex,woodtex,bluegrasstex;
+GLuint grasstex,rocktex,woodtex,bluegrasstex, conctex, testtex;
 // Reference to shader program
 float rotateX = 30;
 float rotateY = 8;
@@ -333,15 +336,23 @@ void init(void)
 	glUseProgram(program);
 	glUniformMatrix4fv(glGetUniformLocation(program, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
 	glUniform1i(glGetUniformLocation(program, "tex"), 0); // Texture unit 0
+    glUniform1i(glGetUniformLocation(program, "tex1"), 1); // Texture unit 0
+    glUniform1i(glGetUniformLocation(program, "tex2"), 2); // Texture unit 0
 
 	glUseProgram(portalShader);
 	glUniformMatrix4fv(glGetUniformLocation(portalShader, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
-	glUniform1i(glGetUniformLocation(portalShader, "tex1"), 0); // Texture unit 0
+	glUniform1i(glGetUniformLocation(portalShader, "tex"), 0); // Texture unit 0
+    glUniform1i(glGetUniformLocation(program, "tex1"), 1); // Texture unit 0
+    glUniform1i(glGetUniformLocation(program, "tex2"), 2); // Texture unit 0
 
 	LoadTGATextureSimple("grass.tga", &grasstex);
 	LoadTGATextureSimple("rock.tga", &rocktex);
-	LoadTGATextureSimple("wood.tga", &woodtex);
+	LoadTGATextureSimple("ConcreteWallPainted-H2FB_64.tga", &woodtex);
 	LoadTGATextureSimple("bluegrass.tga", &bluegrasstex);
+    LoadTGATextureSimple("conc.tga", &conctex);
+    LoadTGATextureSimple("ConcreteFloor-Hazard-Half-01_64.tga", &testtex);
+    
+
 	glBindTexture(GL_TEXTURE_2D, grasstex);
 	glTexParameteri(GL_TEXTURE_2D,	GL_TEXTURE_WRAP_S,	GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D,	GL_TEXTURE_WRAP_T,	GL_REPEAT);
@@ -358,9 +369,12 @@ void init(void)
         roommodels[i] = LoadDataToModel(rooms[i].vertices, rooms[i].normals, rooms[i].texCoords, rooms[i].colors, rooms[i].indices, sizeof(rooms[i].vertices), sizeof(rooms[i].indices));
    
     }
-    rooms[1].tex = rocktex;
-    rooms[2].tex = bluegrasstex;
-    rooms[3].tex = grasstex;
+    rooms[1].walltex = woodtex;
+    rooms[1].floortex = testtex;
+    rooms[2].walltex = bluegrasstex;
+    rooms[2].floortex = conctex;
+    rooms[3].walltex = grasstex;
+    rooms[3].floortex = conctex;
     rooms[1].floorVertCount = 6;
     rooms[1].floorOutline[0] = vec2 (0,0);
     rooms[1].floorOutline[1] = vec2 (0,20);
@@ -469,7 +483,12 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
 	glDisable(GL_BLEND);
 	  
 	glUseProgram(program);
-    glBindTexture(GL_TEXTURE_2D, rooms[currentCell].tex);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, rooms[currentCell].walltex);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, rooms[currentCell].floortex);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, conctex);
     trans = T(0,0,0);//rooms[currentCell].portals[0].center.x, rooms[currentCell].portals[0].center.y, rooms[currentCell].portals[0].center.z); // Move rooms side by side
     glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
     DrawModel(roommodels[currentCell], program, "in_Position", "in_Normal", "inTexCoord");
@@ -481,7 +500,7 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
 
     glUseProgram(portalShader);
     glUniformMatrix4fv(glGetUniformLocation(portalShader, "total"), 1, GL_TRUE, modelToWorld.m);
-    glBindTexture(GL_TEXTURE_2D, rooms[currentCell].tex);
+
 
 //	glUniformMatrix4fv(glGetUniformLocation(portalShader, "modelviewMatrix"), 1, GL_TRUE, Mult(worldToView, modelToWorld).m);
 	for (int i = 0; i < rooms[currentCell].portalCount; i++)
