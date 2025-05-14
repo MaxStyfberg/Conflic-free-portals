@@ -8,17 +8,15 @@ uniform mat4 projectionMatrix;
 in vec2 inTexCoord;
 out vec2 TexCoord;
 out float worldPos;
+out vec3 fragment_position;
 
 void main(void)
 {
-	mat3 normalMatrix1 = mat3(total);
-	mat3 normalMatrix3 = mat3(view);
-	vec3 transformedNormal = normalMatrix3 *normalMatrix1 * in_Normal;
-	const vec3 light = vec3(0.58,0.58,0.58);
-	float shade;
- 	shade = dot(normalize(transformedNormal),light);
+	mat3 normalMatrix = transpose(inverse(mat3(view*total)));
+	Color = mat3(view)*mat3(total)*in_Normal;
+    vec4 viewpos = view*total*vec4(in_Position,1.0);
+    fragment_position = viewpos.xyz;
 	TexCoord = inTexCoord;
-	Color = vec3(shade);
     worldPos = in_Position.y;
 	gl_Position = projectionMatrix*view*total*vec4(in_Position, 1.0);
 }

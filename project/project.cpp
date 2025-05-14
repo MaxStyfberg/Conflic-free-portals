@@ -18,11 +18,6 @@
 #define modelno 4
 
 typedef struct {
-    /*vec3 vertices[MAX_VERTICES];
-    vec3 normals[MAX_VERTICES];
-    vec2 texCoords[MAX_VERTICES];
-    vec3 colors[MAX_VERTICES];
-    GLuint indices[MAX_INDICES];*/
     vec3 a, b, c, d; // 4 corners
 	mat4 trans;
     mat4 move;
@@ -44,7 +39,9 @@ typedef struct {
     GLuint walltex;
     GLuint floortex;
     GLuint rooftex;
+    vec3 lightPos;
 } Room;
+
 
 
 mat4 projectionMatrix;
@@ -64,7 +61,7 @@ GLuint program,portalShader;
 Model *roommodels[modelno];
 Model *portalmodels[modelno];
 Model *m, *m2, *tm, *sphere;
-GLuint grasstex,rocktex,woodtex,bluegrasstex, conctex, testtex;
+GLuint wall2,wall3,wall1,floor3, roof, floor1, floor2;
 // Reference to shader program
 float rotateX = 30;
 float rotateY = 8;
@@ -258,6 +255,7 @@ void moveCamera() {
 														// Then translate to portal destination
 		    cameraPos = rooms[currentCell].portals[i].move * cameraPos;
 		    movement = rooms[currentCell].portals[i].rot * movement;
+            cameraFront = normalize(rooms[currentCell].portals[i].rot * cameraFront);
         }
         else{
 
@@ -270,7 +268,6 @@ void moveCamera() {
             // Transform to destination portal space
             vec3 offsetRotated = p->rot * localOffset;    // rotate from source to dest frame
             vec3 offsetMoved = p->move * offsetRotated;   // apply movement
-
             cameraPos = VectorAdd(destPortal->a, offsetMoved);
             }
         currentCell = p->dest;
@@ -345,18 +342,18 @@ void init(void)
     glUniform1i(glGetUniformLocation(program, "tex1"), 1); // Texture unit 0
     glUniform1i(glGetUniformLocation(program, "tex2"), 2); // Texture unit 0
 
-	LoadTGATextureSimple("grass.tga", &grasstex);
-	LoadTGATextureSimple("rock.tga", &rocktex);
-	LoadTGATextureSimple("ConcreteWallPainted-H2FB_64.tga", &woodtex);
-	LoadTGATextureSimple("bluegrass.tga", &bluegrasstex);
-    LoadTGATextureSimple("conc.tga", &conctex);
-    LoadTGATextureSimple("ConcreteFloor-Hazard-Half-01_64.tga", &testtex);
-    
+	LoadTGATextureSimple("ConcreteWallPainted-HR_64.tga", &wall2);
+	LoadTGATextureSimple("ConcreteWall-Hazard-Full-01_64.tga", &wall3);
+	LoadTGATextureSimple("ConcreteWallPainted-H2FB_64.tga", &wall1);
+	LoadTGATextureSimple("ConcreteFloorPainted-H2FY_64.tga", &floor3);
+    LoadTGATextureSimple("ConcreteFloorPainted-Cb16x16B_64.tga", &roof);
+    LoadTGATextureSimple("ConcreteFloor-Hazard-Full-01_64.tga", &floor1);
+    LoadTGATextureSimple("ConcreteFloorPainted-HR_64.tga", &floor2);
 
-	glBindTexture(GL_TEXTURE_2D, grasstex);
+	glBindTexture(GL_TEXTURE_2D, wall2);
 	glTexParameteri(GL_TEXTURE_2D,	GL_TEXTURE_WRAP_S,	GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D,	GL_TEXTURE_WRAP_T,	GL_REPEAT);
-	glBindTexture(GL_TEXTURE_2D, rocktex);
+	glBindTexture(GL_TEXTURE_2D, wall3);
 	glTexParameteri(GL_TEXTURE_2D,	GL_TEXTURE_WRAP_S,	GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D,	GL_TEXTURE_WRAP_T,	GL_REPEAT);
     
@@ -369,12 +366,12 @@ void init(void)
         roommodels[i] = LoadDataToModel(rooms[i].vertices, rooms[i].normals, rooms[i].texCoords, rooms[i].colors, rooms[i].indices, sizeof(rooms[i].vertices), sizeof(rooms[i].indices));
    
     }
-    rooms[1].walltex = woodtex;
-    rooms[1].floortex = testtex;
-    rooms[2].walltex = bluegrasstex;
-    rooms[2].floortex = conctex;
-    rooms[3].walltex = grasstex;
-    rooms[3].floortex = conctex;
+    rooms[1].walltex = wall1;
+    rooms[1].floortex = floor1;
+    rooms[2].walltex = wall2;
+    rooms[2].floortex = floor2;
+    rooms[3].walltex = wall3;
+    rooms[3].floortex = floor3;
     rooms[1].floorVertCount = 6;
     rooms[1].floorOutline[0] = vec2 (0,0);
     rooms[1].floorOutline[1] = vec2 (0,20);
@@ -396,8 +393,9 @@ void init(void)
     rooms[3].floorOutline[3] = vec2 (90, 30);
     rooms[3].floorOutline[4] = vec2 (170, 30);
     rooms[3].floorOutline[5] = vec2 (170, -20);
-  
-
+    rooms[1].lightPos = vec3(20, 9,0);
+    rooms[2].lightPos = vec3(55, 9,-40);
+    rooms[3].lightPos = vec3(125,9,0);
     addPortal(1,	// Add to this cell
 		2,			// Destination cell
 		vec3(30,-10, -20), // Four corners of portal. Must be a square.
@@ -488,7 +486,11 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, rooms[currentCell].floortex);
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, conctex);
+    glBindTexture(GL_TEXTURE_2D, roof);
+    vec3 lightcolour = vec3(1.0f,1.0f,1.0f);
+    glUniform3fv(glGetUniformLocation(program, "lightPos"), 1, &rooms[currentCell].lightPos.x);
+    glUniform3fv(glGetUniformLocation(program, "lightColour"), 1, &lightcolour.x);
+    glUniform3fv(glGetUniformLocation(program, "CamDir"), 1, &cameraPos.x);
     trans = T(0,0,0);//rooms[currentCell].portals[0].center.x, rooms[currentCell].portals[0].center.y, rooms[currentCell].portals[0].center.z); // Move rooms side by side
     glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
     DrawModel(roommodels[currentCell], program, "in_Position", "in_Normal", "inTexCoord");
