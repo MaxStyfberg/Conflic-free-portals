@@ -3,6 +3,8 @@
 // uses framework Cocoa
 // uses framework OpenGL
 #define MAIN
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio.h"
 #include "lodepng.h"
 #include "MicroGlut.h"
 #include "GL_utilities.h"
@@ -10,6 +12,7 @@
 #include "LittleOBJLoader.h"
 #include "LoadTGA.h"
 #include<math.h>
+#include <time.h>
 #define radians(deg) ((deg) * (M_PI / 180.0f))
 
 #define MAX_VERTICES 1000
@@ -27,6 +30,14 @@ typedef struct {
 	Model *model;
 } Portal;
 typedef struct {
+    vec3 positions;
+    float size;
+    Model* model;
+    float rotationY;
+    GLuint boxtex;
+} Box;
+
+typedef struct {
     vec3 vertices[MAX_VERTICES];
     vec3 normals[MAX_VERTICES];
     vec2 texCoords[MAX_VERTICES];
@@ -40,6 +51,8 @@ typedef struct {
     GLuint floortex;
     GLuint rooftex;
     vec3 lightPos;
+    Box *boxes;
+    int boxCount = 0;
 } Room;
 
 
@@ -57,18 +70,18 @@ Portal portals[MAX_ROOMS];
 //int portalCount = 0;
 int roomCount = 0;
 int currentCell = 1;
-GLuint program,portalShader;
+GLuint program,portalShader,objectShader;
 Model *roommodels[modelno];
 Model *portalmodels[modelno];
-Model *m, *m2, *tm, *sphere;
-GLuint wall2,wall3,wall1,floor3, roof, floor1, floor2;
+Model *cube;
+GLuint wall2,wall3,wall1,floor3, roof, floor1, floor2,box1,box2,box3,box4;
 // Reference to shader program
 float rotateX = 30;
 float rotateY = 8;
 float rotateZ = 0;
 float sphereX = 5.0f, sphereZ = 5.0f, sphereY = 0.0f;
 float velocityX = 0.02f, velocityZ = 0.01f; // Speed of movement
-vec3 cameraPos = {10.0f, 0.0f, 5.0f};  // Camera's position
+vec3 cameraPos = {30.0f, 0.0f, 0.0f};  // Camera's position
 vec3 cameraFront = {0.0f, 0.0f, -1.0f}; // Direction camera is facing
 vec3 cameraUp = {0.0f, 1.0f, 0.0f}; // Up direction
 
@@ -80,6 +93,9 @@ float lastX = 300, lastY = 300;
 bool firstMouse = true;
 float sensitivity = 0.1f;
 
+ma_engine engine;
+double lastPlayTime = 0.0;
+double soundCooldown = 0.6;
 void LoadRoomsFromFile(const char* filename)
 {
     FILE* file = fopen(filename, "r");
@@ -157,11 +173,27 @@ void LoadRoomsFromFile(const char* filename)
         }  
     }
     fclose(file);
-    printf("max(%.2f, %.2f,)\n", rooms[1].floorOutline[0].x, rooms[1].floorOutline[0].y);
-
-    printf("Model created for room %d\n", rooms[1].floorVertCount);
+}
+double getTimeInSeconds() {
+    return glutGet(GLUT_ELAPSED_TIME) / 1000.0;
+}
+void initAudio() {
+    if (ma_engine_init(NULL, &engine) != MA_SUCCESS) {
+        fprintf(stderr, "Failed to initialize audio engine.\n");
+    }
 }
 
+void playCollisionSound() {
+    double now = getTimeInSeconds();
+    if (now - lastPlayTime >= soundCooldown) {
+        ma_engine_play_sound(&engine, "793441__penguinnom__collision-sound1.wav", NULL);
+        lastPlayTime = now;
+    }
+}
+
+void shutdownAudio() {
+    ma_engine_uninit(&engine);
+}
 bool isInsideRoom(Room* room, vec2 point) {
     int i, j, c = 0;
     for (i = 0, j = room->floorVertCount - 1; i < room->floorVertCount; j = i++) {
@@ -190,7 +222,12 @@ bool intersectsPortal(Portal* p, vec3 camPos) {
 
     return proj_u >= 0.0f && proj_u <= 1.0f && proj_v >= 0.0f && proj_v <= 1.0f;
 }
+bool isCollidingWithBox(Box* box, vec3 pos) {
+    float halfSize = box->size;
 
+    return (pos.x > box->positions.x - halfSize && pos.x < box->positions.x + halfSize &&
+            pos.z > box->positions.z - halfSize && pos.z < box->positions.z + halfSize);
+}
 void moveCamera() {
     vec3 right = normalize(cross(cameraFront, cameraUp));
     float rotationSpeed = 2.0f;
@@ -274,6 +311,13 @@ void moveCamera() {
         break;
         }
     }
+   for (int i = 0; i < rooms[currentCell].boxCount; i++) {
+        if (isCollidingWithBox(&rooms[currentCell].boxes[i], cameraPos)) {
+            cameraPos = oldPos;
+            playCollisionSound();
+            break;
+        }
+    }
 }
 
 void addPortal(int cell, int toCell, vec3 a, vec3 b, vec3 c, vec3 d, mat4 trans, mat4 rot, mat4 move)
@@ -309,7 +353,24 @@ void addPortal(int cell, int toCell, vec3 a, vec3 b, vec3 c, vec3 d, mat4 trans,
 
 
 	 rooms[cell].portalCount += 1;
-     printf("Portalcount %d\n", rooms[cell].portalCount);
+    
+}
+
+void addBox(int cell, vec3 pos, int size, Model *model, float rotation, GLint boxtex )
+{
+   
+	int boxCount = rooms[cell].boxCount;
+	if (rooms[cell].boxes == NULL)
+		rooms[cell].boxes = (Box *) malloc(sizeof(Box));
+	else
+		rooms[cell].boxes = (Box *) realloc(rooms[cell].boxes, (boxCount+1)*sizeof(Box));
+    
+    rooms[cell].boxes[boxCount].positions = pos;
+    rooms[cell].boxes[boxCount].size = size;
+    rooms[cell].boxes[boxCount].model = model;
+    rooms[cell].boxes[boxCount].rotationY = rotation;
+    rooms[cell].boxes[boxCount].boxtex = boxtex;
+    rooms[cell].boxCount +=1;
 }
 
 void init(void)
@@ -327,10 +388,13 @@ void init(void)
 	// Load and compile shader
 	program = loadShaders("project.vert", "project.frag");
     portalShader = loadShaders("portal.vert", "portal.frag");
+    objectShader = loadShaders("object.vert", "object.frag");
 	glUseProgram(program);
 	printError("init shader");
 	
 	glUseProgram(program);
+    
+    cube = LoadModel("cube.obj");
 	glUniformMatrix4fv(glGetUniformLocation(program, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
 	glUniform1i(glGetUniformLocation(program, "tex"), 0); // Texture unit 0
     glUniform1i(glGetUniformLocation(program, "tex1"), 1); // Texture unit 0
@@ -339,8 +403,12 @@ void init(void)
 	glUseProgram(portalShader);
 	glUniformMatrix4fv(glGetUniformLocation(portalShader, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
 	glUniform1i(glGetUniformLocation(portalShader, "tex"), 0); // Texture unit 0
-    glUniform1i(glGetUniformLocation(program, "tex1"), 1); // Texture unit 0
-    glUniform1i(glGetUniformLocation(program, "tex2"), 2); // Texture unit 0
+    glUniform1i(glGetUniformLocation(portalShader, "tex1"), 1); // Texture unit 0
+    glUniform1i(glGetUniformLocation(portalShader, "tex2"), 2); // Texture unit 0
+
+    glUseProgram(objectShader);
+	glUniformMatrix4fv(glGetUniformLocation(objectShader, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
+	glUniform1i(glGetUniformLocation(objectShader, "tex"), 0); // Texture unit 0
 
 	LoadTGATextureSimple("ConcreteWallPainted-HR_64.tga", &wall2);
 	LoadTGATextureSimple("ConcreteWall-Hazard-Full-01_64.tga", &wall3);
@@ -349,7 +417,12 @@ void init(void)
     LoadTGATextureSimple("ConcreteFloorPainted-Cb16x16B_64.tga", &roof);
     LoadTGATextureSimple("ConcreteFloor-Hazard-Full-01_64.tga", &floor1);
     LoadTGATextureSimple("ConcreteFloorPainted-HR_64.tga", &floor2);
-
+    LoadTGATextureSimple("Metal-Panel-003_Section-001.tga", &box1);
+    LoadTGATextureSimple("Panel-001-2_Base-001.tga", &box2);
+    LoadTGATextureSimple("Grid-002-9_Base-004.tga", &box3);
+    LoadTGATextureSimple("Vent-003_Base-003.tga", &box4);
+    
+   
 	glBindTexture(GL_TEXTURE_2D, wall2);
 	glTexParameteri(GL_TEXTURE_2D,	GL_TEXTURE_WRAP_S,	GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D,	GL_TEXTURE_WRAP_T,	GL_REPEAT);
@@ -436,6 +509,37 @@ void init(void)
 		Ry(M_PI),
         T(50,0,0));
  
+    addBox(1, vec3(10,-6, 0), 4, cube, 20, box1);
+
+    addBox(1, vec3(37, -8, 15), 2, cube, 20, box2);
+
+    addBox(1, vec3(32, -8, 15), 2, cube, 30, box2);
+
+    addBox(1, vec3(34, -8, 10), 2, cube, 10, box2);
+
+    addBox(1, vec3(34, -4, 14), 2, cube, 40, box3);
+
+    addBox(1, vec3(-32, -7, -10), 3, cube, 1, box4);
+
+    addBox(2, vec3(55,-6, -30), 4, cube, 10,box3);
+     
+    addBox(2, vec3(85,-6, -55), 4, cube, 10,box3);
+    
+    addBox(2, vec3(85, 1, -54), 3, cube, 30,box1);
+
+    addBox(2, vec3(55, -7, -62), 3, cube, 1, box4);
+
+    addBox(3, vec3(100,-6, 20), 4, cube, 40,box2);
+    
+    addBox(3, vec3(160,-6, -10), 4, cube,1,box1);
+    
+    addBox(3, vec3(160,-6, 0), 4, cube, 30, box1);
+
+    addBox(3, vec3(160, 1, -5), 3, cube, 30, box2);
+
+    addBox(3, vec3(160, -4, 20), 6, cube, 30, box2);
+
+    addBox(3, vec3(120, -7, -22), 3, cube, 1, box4);
 
     currentCell = 1;
 	printError("init terrain");
@@ -467,9 +571,6 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
 			mat4 tf = T(c1.x, c1.y, c1.z); // Translation portal destination to current
 			m = tf * m;
             mat4 newModelToWorld = Mult(modelToWorld, m);
-            printf("dest %d\n ", rooms[currentCell].portals[i].dest );
-            printf("location %f\n ", rooms[currentCell].portals[i].center.x );
-            printf("count %d\n", count);
 			DrawCell(rooms[currentCell].portals[i].dest, currentCell, worldToView, newModelToWorld, count+1);
 		}
 	}
@@ -495,7 +596,20 @@ void DrawCell(int currentCell, int fromCell, mat4 worldToView, mat4 modelToWorld
     glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, trans.m);
     DrawModel(roommodels[currentCell], program, "in_Position", "in_Normal", "inTexCoord");
     
-        
+    glUseProgram(objectShader);
+    for (int i = 0; i < rooms[currentCell].boxCount; i++) {
+        glActiveTexture(GL_TEXTURE0);
+        Box* b = &rooms[currentCell].boxes[i];
+        glBindTexture(GL_TEXTURE_2D, b->boxtex);
+        glUniform3fv(glGetUniformLocation(objectShader, "lightPos"), 1, &rooms[currentCell].lightPos.x);
+        glUniform3fv(glGetUniformLocation(objectShader, "lightColour"), 1, &lightcolour.x);
+        glUniform3fv(glGetUniformLocation(objectShader, "CamDir"), 1, &cameraPos.x);
+        mat4 modelMatrix = T(b->positions.x, b->positions.y, b->positions.z)
+                     * Ry(b->rotationY * (M_PI / 180.0f))  // Convert degrees to radians if needed
+                     * S(b->size, b->size, b->size);
+        glUniformMatrix4fv(glGetUniformLocation(program, "total"), 1, GL_TRUE, modelMatrix.m);
+        DrawModel(b->model, objectShader, "in_Position", "in_Normal", "inTexCoord");
+    }   
     
 	glDisable(GL_CULL_FACE);
 	glEnable(GL_BLEND);
@@ -540,12 +654,17 @@ void display(void)
     glUniformMatrix4fv(glGetUniformLocation(portalShader, "view"), 1, 
      GL_TRUE, worldToView.m);
 
+    glUseProgram(objectShader);
+
+    glUniformMatrix4fv(glGetUniformLocation(portalShader, "view"), 1, 
+     GL_TRUE, worldToView.m);
+
     glUseProgram(program);
 	modelToWorld = IdentityMatrix();
 	total = worldToView * modelToWorld;
     DrawCell(currentCell, -1, worldToView, IdentityMatrix(), 0); // Draw cells recursively! Needed for the semitransparent portal!
   
- 
+   
 	printError("display 2");
 	
 	glutSwapBuffers();
@@ -582,6 +701,8 @@ void mouse(int x, int y) {
 int main(int argc, char **argv)
 {
 	glutInit(&argc, argv);
+    initAudio();
+     atexit(shutdownAudio);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH );
 	glutInitContextVersion(3, 2);
 	glutInitWindowSize (600, 600);
@@ -593,6 +714,7 @@ int main(int argc, char **argv)
 	glutPassiveMotionFunc(mouse);
 
 	glutMainLoop();
+    shutdownAudio();
 	exit(0);
 }
 
