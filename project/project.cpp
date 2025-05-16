@@ -64,7 +64,6 @@ mat4 projectionMatrix;
 // Function to update sphere position
 
 // vertex array object
-vec3 vertex[4];
 Room rooms[MAX_ROOMS];
 Portal portals[MAX_ROOMS];
 //int portalCount = 0;
@@ -72,15 +71,10 @@ int roomCount = 0;
 int currentCell = 1;
 GLuint program,portalShader,objectShader;
 Model *roommodels[modelno];
-Model *portalmodels[modelno];
 Model *cube;
 GLuint wall2,wall3,wall1,floor3, roof, floor1, floor2,box1,box2,box3,box4;
 // Reference to shader program
-float rotateX = 30;
-float rotateY = 8;
-float rotateZ = 0;
-float sphereX = 5.0f, sphereZ = 5.0f, sphereY = 0.0f;
-float velocityX = 0.02f, velocityZ = 0.01f; // Speed of movement
+
 vec3 cameraPos = {30.0f, 0.0f, 0.0f};  // Camera's position
 vec3 cameraFront = {0.0f, 0.0f, -1.0f}; // Direction camera is facing
 vec3 cameraUp = {0.0f, 1.0f, 0.0f}; // Up direction
@@ -88,10 +82,6 @@ vec3 cameraUp = {0.0f, 1.0f, 0.0f}; // Up direction
 float yaw = -90.0f; // Left/right rotation
 float pitch = 0.0f; // Up/down rotation
 float cameraSpeed = 1.0f;
-
-float lastX = 300, lastY = 300;
-bool firstMouse = true;
-float sensitivity = 0.1f;
 
 ma_engine engine;
 ma_sound backgroundSound;
@@ -714,34 +704,6 @@ void display(void)
 	glutSwapBuffers();
 }
 
-void mouse(int x, int y) {
-    /*if (firstMouse) { // Prevent sudden jump when starting
-        lastX = x;
-        lastY = y;
-        firstMouse = false;
-    }
-
-    float dx = x - lastX;
-    float dy = lastY - y; // Invert Y-axis for natural feel
-    lastX = x;
-    lastY = y;
-
-    yaw += dx * sensitivity;
-    pitch += dy * sensitivity;
-
-    // Clamp pitch to avoid flipping
-    if (pitch > 89.0f)
-        pitch = 89.0f;
-    if (pitch < -89.0f)
-        pitch = -89.0f;
-
-    // Update cameraFront vector based on yaw and pitch
-    vec3 front;
-    front.x = cos(radians(yaw)) * cos(radians(pitch));
-    front.y = sin(radians(pitch));
-    front.z = sin(radians(yaw)) * cos(radians(pitch));
-    cameraFront = normalize(front);*/
-}
 int main(int argc, char **argv)
 {
 	glutInit(&argc, argv);
@@ -756,7 +718,7 @@ int main(int argc, char **argv)
 	init ();
 	glutRepeatingTimer(20);
 	
-	glutPassiveMotionFunc(mouse);
+
 
 	glutMainLoop();
     shutdownAudio();
