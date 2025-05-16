@@ -94,6 +94,8 @@ bool firstMouse = true;
 float sensitivity = 0.1f;
 
 ma_engine engine;
+ma_sound backgroundSound;
+ma_sound walkingSound;
 double lastPlayTime = 0.0;
 double soundCooldown = 0.6;
 void LoadRoomsFromFile(const char* filename)
@@ -181,6 +183,18 @@ void initAudio() {
     if (ma_engine_init(NULL, &engine) != MA_SUCCESS) {
         fprintf(stderr, "Failed to initialize audio engine.\n");
     }
+     if (ma_sound_init_from_file(&engine, "421701__bolkmar__atmos-horror-creepy-dark-lord-is-coming.wav", 0, NULL, NULL, &backgroundSound) != MA_SUCCESS) {
+        fprintf(stderr, "Failed to load background sound.\n");
+        return;
+    }
+    
+
+    // Set the sound to loop automatically
+    ma_sound_set_looping(&backgroundSound, MA_TRUE);
+    if (ma_sound_init_from_file(&engine, "421133__giocosound__footstep_metal_2.wav", 0, NULL, NULL, &walkingSound) != MA_SUCCESS) {
+        fprintf(stderr, "Failed to load walking sound.\n");
+        return;
+    }
 }
 
 void playCollisionSound() {
@@ -190,7 +204,23 @@ void playCollisionSound() {
         lastPlayTime = now;
     }
 }
-
+void playPortalSound() {
+    double now = getTimeInSeconds();
+    if (now - lastPlayTime >= soundCooldown) {
+        ma_engine_play_sound(&engine, "178350__andromadax24__s_teleport_05.wav", NULL);
+        lastPlayTime = now;
+    }
+}
+void playWalkingSound() {
+    if (!ma_sound_is_playing(&walkingSound)) {
+        ma_sound_start(&walkingSound);
+    }
+}
+void playBackgroundSound() {
+    if (!ma_sound_is_playing(&backgroundSound)) {
+        ma_sound_start(&backgroundSound);
+    }
+}
 void shutdownAudio() {
     ma_engine_uninit(&engine);
 }
@@ -234,21 +264,34 @@ void moveCamera() {
     vec3 movement = {0.0f, 0.0f, 0.0f};
 
     // Accumulate movement input
-    if (glutKeyIsDown('w'))
+   bool isMoving = false;
+
+    if (glutKeyIsDown('w')) {
         movement = VectorAdd(movement, ScalarMult(cameraFront, cameraSpeed));
-    if (glutKeyIsDown('s'))
+        isMoving = true;
+     }
+    if (glutKeyIsDown('s')) {
         movement = VectorSub(movement, ScalarMult(cameraFront, cameraSpeed));
-    if (glutKeyIsDown('a'))
+        isMoving = true;
+    }
+    if (glutKeyIsDown('a')) {
         movement = VectorSub(movement, ScalarMult(right, cameraSpeed));
-    if (glutKeyIsDown('d'))
+        isMoving = true;
+    }
+    if (glutKeyIsDown('d')) {
         movement = VectorAdd(movement, ScalarMult(right, cameraSpeed));
-    if (glutKeyIsDown('q'))
-        movement = VectorAdd(movement, ScalarMult(cameraUp, cameraSpeed));
-    if (glutKeyIsDown('e'))
-        movement = VectorSub(movement, ScalarMult(cameraUp, cameraSpeed));
+        isMoving = true;
+    }
+   
+
+// Only play sound if a movement key was pressed
+if (isMoving) {
+    playWalkingSound();
+}
 
     // Store old position before applying movement
     vec3 oldPos = cameraPos;
+    
     cameraPos = VectorAdd(cameraPos, movement);
 
 // Lock Y position
@@ -259,6 +302,7 @@ void moveCamera() {
     vec2 pos2D = { cameraPos.x, cameraPos.z };
     if (!isInsideRoom(&rooms[currentCell], pos2D)) {;
         cameraPos = oldPos;
+        playCollisionSound();
     } 
  
     if (glutKeyIsDown(GLUT_KEY_LEFT))  // Rotate left
@@ -269,7 +313,7 @@ void moveCamera() {
         pitch += rotationSpeed;
     if (glutKeyIsDown(GLUT_KEY_DOWN))  // Look down
         pitch -= rotationSpeed;
-
+    
     // Clamp pitch to avoid flipping
     if (pitch > 89.0f)
         pitch = 89.0f;
@@ -285,6 +329,7 @@ void moveCamera() {
     for (int i = 0; i < rooms[currentCell].portalCount; i++) {
         Portal* p = &rooms[currentCell].portals[i];
         if (intersectsPortal(p, cameraPos)) {
+        playPortalSound();
         if(currentCell != 3){
             cameraPos = cameraPos- rooms[currentCell].portals[i].center;
             cameraPos = rooms[currentCell].portals[i].rot * cameraPos;
@@ -663,8 +708,7 @@ void display(void)
 	modelToWorld = IdentityMatrix();
 	total = worldToView * modelToWorld;
     DrawCell(currentCell, -1, worldToView, IdentityMatrix(), 0); // Draw cells recursively! Needed for the semitransparent portal!
-  
-   
+ 
 	printError("display 2");
 	
 	glutSwapBuffers();
@@ -702,6 +746,7 @@ int main(int argc, char **argv)
 {
 	glutInit(&argc, argv);
     initAudio();
+    playBackgroundSound();
      atexit(shutdownAudio);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH );
 	glutInitContextVersion(3, 2);
